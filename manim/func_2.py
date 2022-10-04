@@ -1,6 +1,7 @@
 from manim import *
 from numpy import *
 from scipy import *
+import scipy.signal as sg
 
 class Func:
     ig = 3E-4
@@ -48,12 +49,26 @@ class Func:
         return Func.ig * 10E3 / (75 - 25) * t - 1.5
 
     @staticmethod
-    def delta_t(t):
+    def delta_i_t(t):
         return 3 * (Func.f_i_t(t) - Func.line(t))
 
     @staticmethod
     def setR12(value):
         Func.r1 = Func.r2 = value
+
+    @staticmethod
+    def delta_i_3D(r1, r2):
+        Func.r1, r1 = r1, Func.r1
+        Func.r2, r2 = r2, Func.r2
+        t = range(25, 75)
+        delta_i = Func.delta_i_t(t)
+        z = np.polyfit(t, delta_i, 7)
+        p = np.poly1d(z)
+        delta_i_t_fitted = z(t)
+        Func.r1 = r1
+        Func.r2 = r2
+        return sg.argrelmax(delta_i_t_fitted)
+
 
 class MyScene(Scene):
     def construct(self):
@@ -95,7 +110,7 @@ class MyScene(Scene):
             Func.line, x_range=[23, 75], color=RED
         )
         delta_gph = always_redraw(
-            lambda: mAxes.plot(Func.delta_t, x_range=[23, 75], color=YELLOW)
+            lambda: mAxes.plot(Func.delta_i_t, x_range=[23, 75], color=YELLOW)
         )
         number_line = NumberLine(
             x_range = [2000, 5500, 2000],
@@ -290,7 +305,6 @@ class NTCT(Scene):
 
 class FinalScene(Scene):
     idx = 30
-    @property
     def construct(self):
         # 坐标轴
         mAxes = Axes(
@@ -303,13 +317,21 @@ class FinalScene(Scene):
         ).move_to(3*LEFT)
         # 坐标轴标记
         mAxesLabel = mAxes.get_axis_labels(
-            x_label=MathTex("I(mA)", font_size=30).next_to(mAxes.y_axis.get_corner(UR), RIGHT, SMALL_BUFF),
-            y_label=MathTex("T(\\textdegree C)", font_size=50).next_to(mAxes.x_axis.get_corner(UR), UP, SMALL_BUFF)
+            x_label=MathTex("I(mA)", font_size=30),
+            y_label=MathTex("T(\\textdegree C)", font_size=50)
         )
 
-        # mFormulaText = MathTex(
-        #
-        # )
+        mRefAxes = Axes(
+            x_range=[600,5100,1000],
+            y_range=[-1,1,0.5],
+            x_length=5,
+            y_length=2.9,
+            tips=False
+        ).move_to(3.5*RIGHT + 2.1*DOWN)
+        mRefLabel = mRefAxes.get_axis_labels(
+            x_label=MathTex("R_{1\&2}",font_size=30),
+            y_label=MathTex("\\mid \\Delta T \\mid",font_size=30)
+        )
 
         # I(F(t))映射函数
         gTarget = mAxes.plot(
@@ -317,47 +339,94 @@ class FinalScene(Scene):
             x_range = [23,75],
             color = BLUE
         )
+        Func.setR12(1920)
+        gSouDelta = mAxes.plot(
+            lambda x: Func.delta_i_t(x) / 3,
+            x_range = [23,75],
+            color = RED
+        )
 
         # R_1&2 参数阻值可调范围
         mSlider = NumberLine(
-            x_range = [200,5500,2000],
-            length = 4
-        ).move_to(2*UR + 0.5*RIGHT)
+            x_range = [600,5100,1000],
+            length = 5
+        ).move_to(2*UR + 1.5*RIGHT)
         mTracker = ValueTracker(1920)
         mPointer = Vector(0.5*DOWN).add_updater(
             lambda m: m.next_to(
+                mSlider.n2p(mTracker.get_value()), UP
+            ))
+        mDashLine = VGroup(
+            DashedLine(
                 mSlider.n2p(mTracker.get_value()),
-                UP
-            )
+                mRefAxes.coords_to_point(10000, -1),
+                color=GREEN
+            ).move_to(
+                mSlider.n2p(mTracker.get_value())
+            ).add_updater(
+                lambda m: m.move_to(mSlider.n2p(mTracker.get_value()))),
+         DashedLine(
+            mSlider.n2p(mTracker.get_value()),
+            mRefAxes.coords_to_point(5000,-1),
+            color=YELLOW
+        ).move_to(
+            mSlider.n2p(mTracker.get_value())
+        ).add_updater(
+            lambda m: m.move_to( mSlider.n2p(mTracker.get_value()))),
+            DashedLine(
+                mSlider.n2p(mTracker.get_value()),
+                mRefAxes.coords_to_point(1920, -1),
+                color=RED
+            ).move_to(
+                mSlider.n2p(mTracker.get_value())
+            ).add_updater(
+                lambda m: m.move_to(mSlider.n2p(mTracker.get_value())))
+
         )
+
+
         mRLabel_2 = MathTex("\Omega").add_updater(
             lambda m: m.next_to(mPointer,LEFT)
         )
-        mRValue = DecimalNumber(FinalScene.idx,0).add_updater(
+        mRValue = DecimalNumber(FinalScene.idx,0).move_to(3*UL).add_updater(
             lambda m: m.next_to(mRLabel_2,LEFT)
-        )
-        mRLabel = MathTex("R_{1\&2} = ").move_to(mRLabel_2,LEFT).add_updater(
+        ).move_to(mRLabel_2,LEFT)
+        mRLabel = MathTex("R_{1\&2} = ").move_to(3*UL).add_updater(
             lambda m: m.next_to(mRValue,LEFT)
         )
 
-        #TODO
-        #peaks
-        mPeakDot = Dot().add_updater(
-            lambda x: x.move_to(GetPeakX(),Func.delta_t(GetPeakX()))
-        )
-        mX = np.linspace([26,74],200)
-        def GetPeakX():
-            mXmin = Func.delta_t(mX).argmin()
-            mXmax = Func.delta_t(mX).argmax()
-            mPeak = mXmin if(abs(mXmin) > abs(mXmax)) else mXmax
-            return mPeak
 
+        def getPeakDot():
+            minimum_x = optimize.fminbound(Func.delta_i_t, 25, 75)
+            minimum = Func.delta_i_t(minimum_x)
+            maximum_x = optimize.fminbound(lambda x: -Func.delta_i_t(x), 25, 75)
+            maximum = Func.delta_i_t(maximum_x)
 
-        #轨迹集
+            minDot = Dot()
+            maxDot = Dot()
+
+            if abs(minimum) > abs(maximum):
+                return VGroup(
+                    minDot.set_points([mAxes.coords_to_point(maximum_x, maximum)]),
+                    maxDot.set_points([mAxes.coords_to_point(minimum_x, minimum)]),
+                    DashedLine(minDot.get_center(),mRefAxes.coords_to_point(3000,maximum),color=BLUE),
+                    DashedLine(maxDot.get_center(), mRefAxes.coords_to_point(3000, minimum), color=RED),
+                )
+            else:
+                return VGroup(
+                    Dot(point = [mAxes.coords_to_point(minimum_x, minimum)]),
+                    Dot(point=[mAxes.coords_to_point(maximum_x, maximum)]),
+                    DashedLine(minDot.get_center(),mRefAxes.coords_to_point(3000,minimum),color=BLUE),
+                    DashedLine(maxDot.get_center(),mRefAxes.coords_to_point(3000,maximum),color=RED)
+                )
+
+        #轨迹集计算
         mFitTrace = VGroup()
         mOffsetTrace = VGroup()
+        mPeakTrace = VGroup()
         for i in arange(600,5000,44):
             Func.setR12(i)
+
             subTrace = mAxes.plot(
                 Func.f_i_t,
                 x_range = [23,75],
@@ -366,16 +435,16 @@ class FinalScene(Scene):
             mFitTrace += subTrace
 
             subTrace = mAxes.plot(
-                Func.delta_t,
+                Func.delta_i_t,
                 x_range = [23,75],
                 color = RED
             )
             mOffsetTrace += subTrace
+            mPeakTrace += getPeakDot()
 
 
         # 随机的初始参数下标
         FinalScene.idx = 30
-
         def DrawTransition(start_idx, end_idx, speed, isRemain = False):
             step = 1
             if start_idx > end_idx:
@@ -395,36 +464,62 @@ class FinalScene(Scene):
                         rate_func=rate_functions.linear,
                         run_time=speed
                     ),
-                    ChangeDecimalToValue(mRValue,value),
+                    Transform(
+                        mPeakTrace[FinalScene.idx],
+                        mPeakTrace[i],
+                        rate_func=rate_functions.linear,
+                        run_time=speed
+                    ),
+                    ChangeDecimalToValue(mRValue,value,alpha=0.1),
                     mTracker.animate.set_value(value)
                 )
                 if (step == 1 and i != end_idx-1) or (step == -1 and i != end_idx+1):
                     self.remove(mFitTrace[FinalScene.idx])
                     self.remove(mOffsetTrace[FinalScene.idx])
+                    self.remove(mPeakTrace[FinalScene.idx])
                 FinalScene.idx = i
 
         self.play(
-            Create(mAxes),
-            Create(mSlider),
-            Create(gTarget),
-            Write(mAxesLabel)
-
+            mTracker.animate.set_value(1920),
+            ChangeDecimalToValue(mRValue,1920)
         )
         self.play(
+            Create(mAxes),
+            Create(mSlider),
+            Write(mAxesLabel),
+
+            Create(gTarget),
+            Create(mFitTrace[FinalScene.idx]),
+            Create(gSouDelta),
+
             Create(mPointer),
+            Create(mDashLine),
             Write(mRLabel),
             Write(mRLabel_2)
         )
-
-        DrawTransition(30,-1,1)
-        self.wait(0.5)
-        DrawTransition(0,100,1)
-        self.wait(0.5)
-        DrawTransition(99,62,1)
+        self.wait(3),
         self.play(
-            ChangeDecimalToValue(mRValue, 3375),
-            mTracker.animate.set_value(3375)
+            Transform(
+                gSouDelta,
+                mOffsetTrace[FinalScene.idx]
+            )
         )
+        self.wait(1)
+        self.remove(gSouDelta)
+
+        DrawTransition(30,20,1)
+        self.wait(1)
+        self.play(
+            Create(mRefAxes),
+            Create(mRefLabel)
+        )
+        # DrawTransition(0,100,1)
+        # self.wait(0.5)
+        # DrawTransition(99,62,1)
+        # self.play(
+        #     ChangeDecimalToValue(mRValue, 3375),
+        #     mTracker.animate.set_value(3375)
+        # )
         self.wait(1)
 
 class RIMappingScene(Scene):
